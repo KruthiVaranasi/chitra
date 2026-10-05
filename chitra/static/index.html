@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chitra</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23c2410c'/><circle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='3'/></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <span class="name">Chitra</span>
+      <span class="deva" lang="hi">चित्र</span>
+    </div>
+    <div class="meta" id="meta">Loading…</div>
+  </header>
+
+  <main>
+    <form class="search" id="search-form" autocomplete="off">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Describe a photo… e.g. “birthday cake with candles”" aria-label="Search photos" autofocus>
+      <label class="img-btn" title="Search with an example image">
+        <input id="file" type="file" accept="image/*" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-8 8"/></svg>
+      </label>
+      <button type="submit">Search</button>
+    </form>
+
+    <div class="filters">
+      <label>From <input id="year-from" type="number" min="1900" max="2100" placeholder="year"></label>
+      <label>To <input id="year-to" type="number" min="1900" max="2100" placeholder="year"></label>
+      <span class="hint">Year filters use the date the photo was taken.</span>
+    </div>
+
+    <p class="status" id="status" aria-live="polite"></p>
+
+    <section class="empty" id="empty">
+      <p>Try searching for</p>
+      <div class="chips">
+        <button>sunset at the beach</button>
+        <button>dog playing in the snow</button>
+        <button>group photo at a wedding</button>
+        <button>screenshot of a receipt</button>
+        <button>street food at night</button>
+        <button>mountains with clouds</button>
+      </div>
+      <p class="drop-hint">Or drop an image anywhere to find similar photos.</p>
+    </section>
+
+    <section class="grid" id="grid"></section>
+  </main>
+
+  <dialog id="viewer">
+    <div class="viewer-body">
+      <img id="viewer-img" alt="">
+      <aside>
+        <p class="path" id="viewer-path"></p>
+        <dl id="viewer-info"></dl>
+        <div class="actions">
+          <button id="btn-similar">Find similar</button>
+          <button id="btn-open">Show in folder</button>
+          <a id="btn-original" target="_blank" rel="noopener">Open original</a>
+        </div>
+        <p class="keys">← → to browse · Esc to close</p>
+      </aside>
+      <button class="close" id="btn-close" aria-label="Close">×</button>
+    </div>
+  </dialog>
+
+  <div class="dropzone" id="dropzone">Drop to find similar photos</div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
