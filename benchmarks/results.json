@@ -1,0 +1,12 @@
+{
+  "model": "google/siglip-base-patch16-224",
+  "images": 1000,
+  "queries": 5001,
+  "recall@1": 0.6784643071385723,
+  "recall@5": 0.8994201159768046,
+  "recall@10": 0.9508098380323935,
+  "median_rank": 1.0,
+  "index_img_per_sec": 3.6,
+  "search_ms_median": 222.9,
+  "query_encode_ms_avg": 99.4
+}

@@ -31,6 +31,15 @@ def test_index_is_incremental(photo_dir, embedder):
     assert Store(photo_dir).count() == 3
 
 
+def test_fixed_file_clears_failure(photo_dir, embedder):
+    index(photo_dir, embedder=embedder, progress=False)
+    assert Store(photo_dir).failure_count() == 1
+    Image.new("RGB", (16, 16), (0, 0, 255)).save(photo_dir / "broken.jpg", "JPEG")
+    stats = index(photo_dir, embedder=embedder, progress=False)
+    assert stats.added == 1
+    assert Store(photo_dir).failure_count() == 0
+
+
 def test_thumbnails_and_metadata(photo_dir, embedder):
     index(photo_dir, embedder=embedder, progress=False)
     store = Store(photo_dir)

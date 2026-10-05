@@ -108,7 +108,9 @@ addEventListener("drop", (e) => {
 });
 
 api("/api/stats").then((s) => {
-  $("meta").textContent = `${s.count.toLocaleString()} photos · ${s.root}`;
+  const folder = s.root.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || s.root;
+  $("meta").textContent = `${s.count.toLocaleString()} photos · ${folder}`;
+  $("meta").title = s.root;
   const q = new URLSearchParams(location.search).get("q");
   if (q) { $("q").value = q; searchText(q); }
 }).catch(() => { $("meta").textContent = "Not connected"; });

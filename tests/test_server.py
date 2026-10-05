@@ -1,4 +1,5 @@
 import io
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -32,6 +33,15 @@ def test_api_end_to_end(photo_dir, embedder):
     Image.new("RGB", (10, 10), (30, 40, 220)).save(buf, "PNG")
     hits = client.post("/api/search-image", files={"file": ("q.png", buf.getvalue(), "image/png")}).json()["results"]
     assert hits[0]["path"] == "trip/blue.jpg"
+
+
+def test_parallel_thumbnail_requests(photo_dir, embedder):
+    # The browser loads many thumbnails at once; they share one SQLite connection.
+    client = make_client(photo_dir, embedder)
+    ids = [r["id"] for r in client.get("/api/search", params={"q": "red", "k": 10}).json()["results"]]
+    with ThreadPoolExecutor(16) as pool:
+        codes = list(pool.map(lambda i: client.get(f"/api/thumb/{i}").status_code, ids * 25))
+    assert set(codes) == {200}
 
 
 def test_home_page_served(photo_dir, embedder):

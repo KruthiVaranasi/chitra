@@ -1,12 +1,25 @@
+<p align="center">
+  <img src="docs/banner.svg" alt="Chitra: search your photos by describing them" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/KruthiVaranasi/chitra/actions/workflows/ci.yml"><img src="https://github.com/KruthiVaranasi/chitra/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/runs-100%25%20offline-ea580c" alt="100% offline">
+  <img src="https://img.shields.io/badge/COCO%20recall%4010-95.1%25-success" alt="COCO recall@10 95.1%">
+  <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT license">
+</p>
+
 # Chitra <sub>चित्र</sub>
 
 **Search your photos by describing them. Offline, on any folder or drive.**
 
 Type *"kids on a beach at sunset"* or *"screenshot of a train ticket"* and Chitra finds the matching photos across tens of thousands of files. You don't need tags, albums or folder names. Everything runs on your own machine, and nothing is uploaded.
 
-![CI](https://github.com/KruthiVaranasi/chitra/actions/workflows/ci.yml/badge.svg)
-
----
+<p align="center">
+  <img src="docs/demo.gif" alt="Chitra demo: typing queries, viewing results, and finding similar photos" width="100%">
+  <br><sub>The real app searching 1,000 photos on a laptop CPU: text search → open a photo → "Find similar".</sub>
+</p>
 
 ## Why
 
@@ -51,15 +64,24 @@ chitra stats  "D:\Photos"
 
 ## How it works
 
-```
-Indexing   image ──► SigLIP image encoder ──► 768-d vector ─┐
-                                                           ├──► .chitra/index.db (SQLite, on the drive)
-Searching  "dog in snow" ──► SigLIP text encoder ──► vector ┘        │
-                                                                     ▼
-                                              cosine similarity ──► top-k results
+```mermaid
+flowchart LR
+    subgraph Indexing["Indexing (once, incremental)"]
+        A[Photos on a folder<br/>or external drive] --> B[Decode + EXIF<br/>+ thumbnail]
+        B --> C[SigLIP<br/>image encoder]
+    end
+    C --> D[(".chitra/index.db<br/>on the drive")]
+    subgraph Search["Search (milliseconds)"]
+        Q["&quot;dog playing in snow&quot;"] --> T[SigLIP<br/>text encoder]
+        I[Example photo] --> C2[SigLIP<br/>image encoder]
+    end
+    T --> S{Cosine<br/>similarity}
+    C2 --> S
+    D --> S
+    S --> R[Top-k photos<br/>in the web UI]
 ```
 
-Chitra uses [SigLIP](https://huggingface.co/google/siglip-base-patch16-224) (Apache-2.0), a vision-language model that places images and text in **the same vector space**. A photo and a sentence describing it end up close together, so search becomes nearest-neighbour lookup. Brute-force search with NumPy takes milliseconds even for 100k+ photos.
+Chitra uses [SigLIP](https://huggingface.co/google/siglip-base-patch16-224) (Apache-2.0), a vision-language model that places images and text in **the same vector space**. A photo and a sentence describing it end up close together, so search becomes nearest-neighbour lookup. Exact brute-force search with NumPy compares a query against 100k photos in a few milliseconds; most of the ~200 ms per search is encoding the query text on CPU.
 
 | Component | Choice |
 |---|---|
@@ -77,6 +99,25 @@ chitra index "D:\Photos" --model openai/clip-vit-base-patch32 --rebuild   # fast
 chitra index "D:\Photos" --model google/siglip-large-patch16-384 --rebuild # slower, more accurate
 ```
 
+## Benchmark
+
+Text-to-image retrieval on the standard **COCO Karpathy test split**: 1,000 photos, each with 5 human-written captions. Every caption (5,001 in total) is used as a search query, and we check where the correct photo ranks.
+
+| Metric | Result |
+|---|---|
+| **Recall@1** (correct photo is the #1 result) | **67.8%** |
+| **Recall@5** | **89.9%** |
+| **Recall@10** | **95.1%** |
+| Median rank of the correct photo | **#1** of 1,000 |
+| Search latency, end to end (laptop CPU) | ~220 ms |
+| Indexing speed (laptop CPU, no GPU) | ~3.6 photos/sec |
+
+Real libraries are easier than this test in one way and harder in another. Queries like "beach" have many correct answers, which makes them easier, but libraries are much larger than 1,000 photos. Reproduce with:
+
+```bash
+python benchmarks/coco_benchmark.py --n 1000
+```
+
 ## Project layout
 
 ```
@@ -90,6 +131,8 @@ chitra/
   server.py    local API + UI
   cli.py       `chitra` command
 tests/         run without downloading a model (fake embedder)
+benchmarks/    COCO retrieval benchmark + latest results.json
+docs/          README banner and demo GIF
 ```
 
 ## Development
@@ -106,11 +149,12 @@ pytest
 - [x] Local web UI
 - [ ] **Search across multiple drives**, including drives that aren't plugged in ("it's on *Backup-2019*, folder X")
 - [ ] Auto-index when a drive is connected
-- [ ] Benchmark: recall@10 and time-to-find versus manual browsing
+- [x] Retrieval benchmark (COCO recall@K)
+- [ ] User study: time-to-find versus manual folder browsing
 - [ ] Multilingual queries (Hindi and other Indian languages)
 - [ ] Video search (sampled frames), OCR for screenshots and documents
 - [ ] One-click Windows installer
 
 ## License
 
-MIT
+MIT. Demo and benchmark photos come from the [COCO dataset](https://cocodataset.org) (images under their original Flickr Creative Commons licenses).

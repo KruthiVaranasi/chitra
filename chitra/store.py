@@ -8,6 +8,7 @@ import hashlib
 import os
 import sqlite3
 import sys
+import threading
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -61,95 +62,111 @@ class Store:
             _hide_on_windows(self.dir)
         self.thumbs = self.dir / "thumbs"
         self.thumbs.mkdir(exist_ok=True)
+        # One connection shared by the web server's worker threads; the lock serialises access to it.
         self.db = sqlite3.connect(self.dir / "index.db", check_same_thread=False)
+        self._lock = threading.RLock()
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript(SCHEMA)
 
     # -- metadata ---------------------------------------------------------
     def get_meta(self, key: str) -> Optional[str]:
-        row = self.db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
-        return row["value"] if row else None
+        with self._lock:
+            row = self.db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+            return row["value"] if row else None
 
     def set_meta(self, key: str, value: str) -> None:
-        self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
-        self.db.commit()
+        with self._lock:
+            self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
+            self.db.commit()
 
     # -- bookkeeping for incremental indexing ------------------------------
     def known(self) -> dict:
-        return {r["path"]: (r["size"], r["mtime"]) for r in self.db.execute("SELECT path, size, mtime FROM images")}
+        with self._lock:
+            return {r["path"]: (r["size"], r["mtime"]) for r in self.db.execute("SELECT path, size, mtime FROM images")}
 
     def failed(self) -> dict:
-        return {r["path"]: (r["size"], r["mtime"]) for r in self.db.execute("SELECT path, size, mtime FROM failures")}
+        with self._lock:
+            return {r["path"]: (r["size"], r["mtime"]) for r in self.db.execute("SELECT path, size, mtime FROM failures")}
 
     def count(self) -> int:
-        return self.db.execute("SELECT COUNT(*) FROM images").fetchone()[0]
+        with self._lock:
+            return self.db.execute("SELECT COUNT(*) FROM images").fetchone()[0]
 
     def failure_count(self) -> int:
-        return self.db.execute("SELECT COUNT(*) FROM failures").fetchone()[0]
+        with self._lock:
+            return self.db.execute("SELECT COUNT(*) FROM failures").fetchone()[0]
 
     # -- writes -------------------------------------------------------------
     def upsert(self, rows: Iterable[tuple]) -> None:
         """rows: (path, size, mtime, width, height, taken_at, embedding ndarray)"""
-        self.db.executemany(
-            """INSERT INTO images (path, size, mtime, width, height, taken_at, embedding)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(path) DO UPDATE SET
-                 size = excluded.size, mtime = excluded.mtime, width = excluded.width,
-                 height = excluded.height, taken_at = excluded.taken_at, embedding = excluded.embedding""",
-            [(p, s, m, w, h, t, np.asarray(e, dtype=np.float32).tobytes()) for p, s, m, w, h, t, e in rows],
-        )
-        self.db.executemany("DELETE FROM failures WHERE path = ?", [(r[0],) for r in rows])
-        self.db.commit()
+        rows = list(rows)
+        with self._lock:
+            self.db.executemany(
+                """INSERT INTO images (path, size, mtime, width, height, taken_at, embedding)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(path) DO UPDATE SET
+                     size = excluded.size, mtime = excluded.mtime, width = excluded.width,
+                     height = excluded.height, taken_at = excluded.taken_at, embedding = excluded.embedding""",
+                [(p, s, m, w, h, t, np.asarray(e, dtype=np.float32).tobytes()) for p, s, m, w, h, t, e in rows],
+            )
+            self.db.executemany("DELETE FROM failures WHERE path = ?", [(r[0],) for r in rows])
+            self.db.commit()
 
     def add_failures(self, rows: Iterable[tuple]) -> None:
         """rows: (path, size, mtime, error)"""
-        self.db.executemany("INSERT OR REPLACE INTO failures (path, size, mtime, error) VALUES (?, ?, ?, ?)", rows)
-        self.db.commit()
+        with self._lock:
+            self.db.executemany("INSERT OR REPLACE INTO failures (path, size, mtime, error) VALUES (?, ?, ?, ?)", rows)
+            self.db.commit()
 
     def delete(self, paths: Iterable[str]) -> None:
-        paths = list(paths)
-        self.db.executemany("DELETE FROM images WHERE path = ?", [(p,) for p in paths])
-        self.db.executemany("DELETE FROM failures WHERE path = ?", [(p,) for p in paths])
-        self.db.commit()
-        for p in paths:
-            try:
-                os.remove(self.thumbs / thumb_name(p))
-            except OSError:
-                pass
+        with self._lock:
+            paths = list(paths)
+            self.db.executemany("DELETE FROM images WHERE path = ?", [(p,) for p in paths])
+            self.db.executemany("DELETE FROM failures WHERE path = ?", [(p,) for p in paths])
+            self.db.commit()
+            for p in paths:
+                try:
+                    os.remove(self.thumbs / thumb_name(p))
+                except OSError:
+                    pass
 
     def clear(self) -> None:
-        self.db.executescript("DELETE FROM images; DELETE FROM failures; DELETE FROM meta;")
-        self.db.commit()
-        for f in self.thumbs.glob("*.jpg"):
-            f.unlink(missing_ok=True)
+        with self._lock:
+            self.db.executescript("DELETE FROM images; DELETE FROM failures; DELETE FROM meta;")
+            self.db.commit()
+            for f in self.thumbs.glob("*.jpg"):
+                f.unlink(missing_ok=True)
 
     # -- reads --------------------------------------------------------------
     def load_matrix(self):
         """Returns (ids, years, matrix): ids int64 (N,), years int32 (N,) with 0 = unknown, matrix float32 (N, D)."""
-        rows = self.db.execute("SELECT id, taken_at, embedding FROM images ORDER BY id").fetchall()
-        if not rows:
-            return np.zeros(0, np.int64), np.zeros(0, np.int32), np.zeros((0, 0), np.float32)
-        ids = np.fromiter((r["id"] for r in rows), np.int64, len(rows))
-        years = np.fromiter((int(r["taken_at"][:4]) if r["taken_at"] else 0 for r in rows), np.int32, len(rows))
-        matrix = np.vstack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
-        return ids, years, matrix
+        with self._lock:
+            rows = self.db.execute("SELECT id, taken_at, embedding FROM images ORDER BY id").fetchall()
+            if not rows:
+                return np.zeros(0, np.int64), np.zeros(0, np.int32), np.zeros((0, 0), np.float32)
+            ids = np.fromiter((r["id"] for r in rows), np.int64, len(rows))
+            years = np.fromiter((int(r["taken_at"][:4]) if r["taken_at"] else 0 for r in rows), np.int32, len(rows))
+            matrix = np.vstack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
+            return ids, years, matrix
 
     def get(self, image_id: int) -> Optional[dict]:
-        row = self.db.execute(
-            "SELECT id, path, size, width, height, taken_at FROM images WHERE id = ?", (int(image_id),)
-        ).fetchone()
-        return dict(row) if row else None
+        with self._lock:
+            row = self.db.execute(
+                "SELECT id, path, size, width, height, taken_at FROM images WHERE id = ?", (int(image_id),)
+            ).fetchone()
+            return dict(row) if row else None
 
     def get_many(self, ids: Iterable[int]) -> dict:
-        ids = [int(i) for i in ids]
-        if not ids:
-            return {}
-        marks = ",".join("?" * len(ids))
-        rows = self.db.execute(
-            f"SELECT id, path, size, width, height, taken_at FROM images WHERE id IN ({marks})", ids
-        ).fetchall()
-        return {r["id"]: dict(r) for r in rows}
+        with self._lock:
+            ids = [int(i) for i in ids]
+            if not ids:
+                return {}
+            marks = ",".join("?" * len(ids))
+            rows = self.db.execute(
+                f"SELECT id, path, size, width, height, taken_at FROM images WHERE id IN ({marks})", ids
+            ).fetchall()
+            return {r["id"]: dict(r) for r in rows}
 
     def abspath(self, rel_path: str) -> Path:
         return self.root / rel_path
