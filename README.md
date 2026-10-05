@@ -21,6 +21,8 @@ Type *"kids on a beach at sunset"* or *"screenshot of a train ticket"* and Chitr
   <br><sub>The real app searching 1,000 photos on a laptop CPU: text search → open a photo → "Find similar".</sub>
 </p>
 
+**📄 Product thinking:** read the [Product Requirements Doc](docs/PRD.md) for the problem, users, why AI (and why not AI at first), success metrics, trade-offs, risks and roadmap.
+
 ## Why
 
 Photos pile up on laptops, external hard disks and old backup SSDs. Finding one picture usually means remembering *when* it was taken and scrolling through folders. Cloud photo apps can search by content, but only for photos you upload to them.
