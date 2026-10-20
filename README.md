@@ -101,9 +101,11 @@ chitra index "D:\Photos" --model openai/clip-vit-base-patch32 --rebuild   # fast
 chitra index "D:\Photos" --model google/siglip-large-patch16-384 --rebuild # slower, more accurate
 ```
 
-## Benchmark
+## Does it find the photo?
 
-Text-to-image retrieval on the standard **COCO Karpathy test split**: 1,000 photos, each with 5 human-written captions. Every caption (5,001 in total) is used as a search query, and we check where the correct photo ranks.
+**In 95 of 100 searches, the photo you want is in the first 10 results, in about a fifth of a second on an ordinary laptop.** It misses most when a description fits many photos ("a plate of food"), when photos look alike, or when what you remember isn't visible in the picture. The test queries describe what's *in* each photo, so real memories will be vaguer; a time-to-find study with real people is on the roadmap.
+
+How it was measured: text-to-image retrieval on the standard **COCO Karpathy test split**: 1,000 photos, each with 5 human-written captions. Every caption (5,001 in total) is used as a search query, and we check where the correct photo ranks.
 
 | Metric | Result |
 |---|---|
